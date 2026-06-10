@@ -76,21 +76,19 @@ export default function AuditForm() {
     }
     setSaving(true);
     try {
-      const fd = new FormData();
-      fd.set('unit_name', unit.unit_name);
-      fd.set('status', status);
-      fd.set('vendor_type', vendorType);
-      fd.set('ingredients', ingredients);
-      fd.set('voluntary_disclaimers', disclaimers);
-      ALLERGENS.forEach((a) => fd.set(`allergen_${a.key}`, flags[a.key] ? '1' : '0'));
-      fd.set('allergen_other', otherAllergens);
-      fd.set('ask_us_flag', askUs ? '1' : '0');
-      fd.set('reviewed_by', reviewer || '');
-      fd.set('notes', notes);
-      fd.set('gtin_prefill_used', prefillApplied ? '1' : '0');
-      if (photo) fd.set('label_photo', photo);
-
-      await api.saveAudit(id, fd);
+      const fields = {
+        status,
+        vendor_type: vendorType,
+        ingredients,
+        voluntary_disclaimers: disclaimers,
+        ...Object.fromEntries(ALLERGENS.map((a) => [`allergen_${a.key}`, flags[a.key] ? 1 : 0])),
+        allergen_other: otherAllergens,
+        ask_us_flag: askUs ? 1 : 0,
+        reviewed_by: reviewer || '',
+        notes,
+        gtin_prefill_used: prefillApplied ? 1 : 0,
+      };
+      await api.saveAudit(id, fields, photo);
       setSaved(true);
       setTimeout(() => nav(-1), 700);
     } catch (e2) {
@@ -109,7 +107,7 @@ export default function AuditForm() {
   if (err && !data) return <div className="alert alert-error">{err}</div>;
 
   const p = data.product;
-  const existingPhoto = data.audit?.label_photo_path;
+  const existingPhoto = data.photoUrl;
 
   return (
     <form onSubmit={submit} className="audit-form">

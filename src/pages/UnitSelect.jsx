@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, Link } from 'react-router-dom';
 import { api } from '../api';
 import { useSession } from '../session.jsx';
 
@@ -73,7 +73,7 @@ export default function UnitSelect() {
 
             {units.length === 0 && (
               <p className="muted small">
-                No units found. Use the <a href="/import">Import</a> screen to upload a MyOrders export.
+                No units found. Use the <Link to="/import">Import</Link> screen to load a MyOrders export.
               </p>
             )}
           </form>

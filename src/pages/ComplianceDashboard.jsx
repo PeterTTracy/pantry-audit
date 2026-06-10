@@ -31,7 +31,9 @@ export default function ComplianceDashboard() {
           <h1>Compliance Dashboard</h1>
           <p className="muted">Audit progress across all dining units</p>
         </div>
-        <a className="btn btn-primary" href={api.exportUrl()}>⬇ Export .xlsx</a>
+        <button className="btn btn-primary" onClick={() => api.exportXlsx().catch((e) => setErr(e.message))}>
+          ⬇ Export .xlsx
+        </button>
       </div>
 
       <div className="card">

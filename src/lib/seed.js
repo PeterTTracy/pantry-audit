@@ -1,4 +1,5 @@
-const db = require('./db');
+// First-run sample data so every screen works immediately.
+import { tx, reqp } from './idb';
 
 // ISO date (YYYY-MM-DD) helper offset from today.
 function dayOffset(days) {
@@ -143,44 +144,19 @@ const SAMPLES = [
   },
 ];
 
-function seedIfEmpty() {
-  const count = db.prepare('SELECT COUNT(*) AS n FROM products').get().n;
-  if (count > 0) {
-    console.log(`[seed] products table already has ${count} rows — skipping seed.`);
-    return;
-  }
+const ALLERGEN_KEYS = [
+  'milk', 'eggs', 'fish', 'shellfish', 'tree_nuts',
+  'peanuts', 'wheat', 'soybeans', 'sesame', 'gluten',
+];
 
-  const insertProduct = db.prepare(`
-    INSERT INTO products
-      (unit_name, compass_id, storage_location, item_description, brand,
-       distributor, distributor_sku, gtin, manufacturer, audit_scope,
-       audit_status, gtin_prefill)
-    VALUES
-      (@unit_name, @compass_id, @storage_location, @item_description, @brand,
-       @distributor, @distributor_sku, @gtin, @manufacturer, @audit_scope,
-       @audit_status, @gtin_prefill)
-  `);
+export async function seedIfEmpty() {
+  return tx(['products', 'audits'], 'readwrite', async (t) => {
+    const products = t.objectStore('products');
+    const count = await reqp(products.count());
+    if (count > 0) return false;
 
-  const insertAudit = db.prepare(`
-    INSERT INTO audit_records
-      (product_id, vendor_type, ingredients, voluntary_disclaimers,
-       allergen_milk, allergen_eggs, allergen_fish, allergen_shellfish,
-       allergen_tree_nuts, allergen_peanuts, allergen_wheat, allergen_soybeans,
-       allergen_sesame, allergen_gluten, allergen_other, ask_us_flag,
-       label_photo_path, reviewed_by, date_reviewed, review_due,
-       gtin_prefill_used, notes)
-    VALUES
-      (@product_id, @vendor_type, @ingredients, @voluntary_disclaimers,
-       @allergen_milk, @allergen_eggs, @allergen_fish, @allergen_shellfish,
-       @allergen_tree_nuts, @allergen_peanuts, @allergen_wheat, @allergen_soybeans,
-       @allergen_sesame, @allergen_gluten, @allergen_other, @ask_us_flag,
-       @label_photo_path, @reviewed_by, @date_reviewed, @review_due,
-       @gtin_prefill_used, @notes)
-  `);
-
-  const tx = db.transaction(() => {
     for (const s of SAMPLES) {
-      const info = insertProduct.run({
+      const id = await reqp(products.add({
         unit_name: UNIT,
         compass_id: COMPASS,
         storage_location: s.storage_location,
@@ -192,41 +168,27 @@ function seedIfEmpty() {
         manufacturer: s.manufacturer,
         audit_scope: 1,
         audit_status: s.audit_status || 'pending',
-        gtin_prefill: s.prefill ? JSON.stringify({ ...s.prefill, source: 'openfoodfacts' }) : null,
-      });
+        gtin_prefill: s.prefill ? { ...s.prefill, source: 'openfoodfacts' } : null,
+      }));
 
       if (s.audit) {
         const a = s.audit;
-        insertAudit.run({
-          product_id: info.lastInsertRowid,
+        await reqp(t.objectStore('audits').add({
+          product_id: id,
           vendor_type: a.vendor_type || null,
           ingredients: a.ingredients || null,
           voluntary_disclaimers: a.voluntary_disclaimers || null,
-          allergen_milk: a.allergen_milk || 0,
-          allergen_eggs: a.allergen_eggs || 0,
-          allergen_fish: a.allergen_fish || 0,
-          allergen_shellfish: a.allergen_shellfish || 0,
-          allergen_tree_nuts: a.allergen_tree_nuts || 0,
-          allergen_peanuts: a.allergen_peanuts || 0,
-          allergen_wheat: a.allergen_wheat || 0,
-          allergen_soybeans: a.allergen_soybeans || 0,
-          allergen_sesame: a.allergen_sesame || 0,
-          allergen_gluten: a.allergen_gluten || 0,
+          ...Object.fromEntries(ALLERGEN_KEYS.map((k) => [`allergen_${k}`, a[`allergen_${k}`] || 0])),
           allergen_other: a.allergen_other || null,
           ask_us_flag: a.ask_us_flag || 0,
-          label_photo_path: a.label_photo_path || null,
           reviewed_by: a.reviewed_by || null,
           date_reviewed: a.date_reviewed || null,
           review_due: a.review_due || null,
           gtin_prefill_used: a.gtin_prefill_used || 0,
           notes: a.notes || null,
-        });
+        }));
       }
     }
+    return true;
   });
-
-  tx();
-  console.log(`[seed] inserted ${SAMPLES.length} sample products for "${UNIT}".`);
 }
-
-module.exports = { seedIfEmpty };

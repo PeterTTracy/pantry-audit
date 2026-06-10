@@ -6,6 +6,7 @@ export default function ImportScreen() {
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState(null);
   const [err, setErr] = useState('');
+  const [restoreMsg, setRestoreMsg] = useState('');
 
   const submit = async (e) => {
     e.preventDefault();
@@ -13,9 +14,7 @@ export default function ImportScreen() {
     if (!file) return setErr('Choose a CSV or Excel file to upload.');
     setBusy(true);
     try {
-      const fd = new FormData();
-      fd.set('file', file);
-      const r = await api.importFile(fd);
+      const r = await api.importFile(file);
       setResult(r);
     } catch (e2) {
       setErr(e2.message);
@@ -24,12 +23,26 @@ export default function ImportScreen() {
     }
   };
 
+  const onRestore = async (e) => {
+    const f = e.target.files[0];
+    e.target.value = '';
+    if (!f) return;
+    if (!window.confirm('Restoring replaces ALL products and audit records on this device with the backup contents. Continue?')) return;
+    setRestoreMsg(''); setErr('');
+    try {
+      const r = await api.restoreBackup(f);
+      setRestoreMsg(`Restored ${r.products} products and ${r.audits} audit records.`);
+    } catch (e2) {
+      setErr(e2.message);
+    }
+  };
+
   return (
     <div>
       <div className="page-head">
         <div>
           <h1>Import Inventory</h1>
-          <p className="muted">Upload a MyOrders inventory export (.csv or .xlsx)</p>
+          <p className="muted">Load a MyOrders inventory export (.csv or .xlsx)</p>
         </div>
       </div>
 
@@ -49,11 +62,10 @@ export default function ImportScreen() {
             onChange={(e) => setFile(e.target.files[0] || null)}
           />
           <button className="btn btn-primary" disabled={busy}>
-            {busy ? 'Importing…' : 'Upload & Import'}
+            {busy ? 'Importing…' : 'Import'}
           </button>
         </form>
 
-        {busy && <p className="muted small">Parsing file and queuing Open Food Facts prefill in the background…</p>}
         {err && <div className="alert alert-error">{err}</div>}
 
         {result && (
@@ -66,10 +78,29 @@ export default function ImportScreen() {
               {result.skipped > 0 && <li>{result.skipped} rows skipped (no item description)</li>}
             </ul>
             <p className="muted small">
-              GTIN prefill from Open Food Facts is running in the background for pending items.
+              Ingredient prefill from Open Food Facts is loading in the background for items with a GTIN.
             </p>
           </div>
         )}
+      </div>
+
+      <div className="card">
+        <h3>Backup &amp; Restore</h3>
+        <p className="muted">
+          All audit data lives on <strong>this device</strong>. Download a backup regularly —
+          clearing browser data erases everything. Backups include products and audit records
+          (label photos stay on the device only).
+        </p>
+        <div className="import-form">
+          <button type="button" className="btn btn-ghost" onClick={() => api.downloadBackup()}>
+            ⬇ Download backup
+          </button>
+          <label className="btn btn-ghost" style={{ display: 'inline-flex', alignItems: 'center', cursor: 'pointer' }}>
+            ⬆ Restore from backup
+            <input type="file" accept=".json,application/json" onChange={onRestore} style={{ display: 'none' }} />
+          </label>
+        </div>
+        {restoreMsg && <div className="alert alert-success">{restoreMsg}</div>}
       </div>
     </div>
   );

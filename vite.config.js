@@ -1,19 +1,36 @@
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
+import { VitePWA } from 'vite-plugin-pwa';
 
-// Frontend builds to ./dist, which the Express server serves in production.
-// In dev (`npm run dev`), Vite runs on 5173 and proxies API + uploads to 3001.
+// Fully client-side PWA: builds to ./dist, deployable on any static host.
+// base './' + HashRouter means it works from a subpath (e.g. GitHub Pages).
 export default defineConfig({
-  plugins: [react()],
+  base: './',
+  plugins: [
+    react(),
+    VitePWA({
+      registerType: 'autoUpdate',
+      includeAssets: ['icon.svg'],
+      manifest: {
+        name: 'Pantry Audit — MIT Dining',
+        short_name: 'Pantry Audit',
+        description: 'Allergen compliance pantry auditing',
+        start_url: '.',
+        display: 'standalone',
+        background_color: '#1d3557',
+        theme_color: '#1d3557',
+        icons: [
+          { src: 'icon.svg', sizes: 'any', type: 'image/svg+xml', purpose: 'any' },
+          { src: 'icon.svg', sizes: 'any', type: 'image/svg+xml', purpose: 'maskable' },
+        ],
+      },
+    }),
+  ],
   build: {
     outDir: 'dist',
     emptyOutDir: true,
   },
   server: {
     port: 5173,
-    proxy: {
-      '/api': 'http://localhost:3001',
-      '/uploads': 'http://localhost:3001',
-    },
   },
 });
