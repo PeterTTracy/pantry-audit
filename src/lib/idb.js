@@ -9,10 +9,26 @@ const DB_VERSION = 2;
 
 let dbPromise = null;
 
+// Shown when an older app window holds the database open, blocking our
+// version upgrade. Without this the app would just hang on a blank screen.
+function blockedBanner(show) {
+  let el = document.getElementById('idb-blocked-banner');
+  if (!show) { el?.remove(); return; }
+  if (el) return;
+  el = document.createElement('div');
+  el.id = 'idb-blocked-banner';
+  el.style.cssText = 'position:fixed;inset:0;z-index:9999;background:#1d3557;color:#fff;display:flex;align-items:center;justify-content:center;text-align:center;padding:24px;font-family:sans-serif;font-size:18px;line-height:1.5';
+  el.textContent = 'Pantry Audit is updating its database, but another tab or window of the app is holding it open. Close every other Pantry Audit tab/window, then reload this one.';
+  document.body.appendChild(el);
+}
+
 export function openDB() {
   if (!dbPromise) {
     dbPromise = new Promise((resolve, reject) => {
       const req = indexedDB.open(DB_NAME, DB_VERSION);
+      // An older window still has the DB open; tell the user instead of
+      // hanging. The open completes automatically once that window closes.
+      req.onblocked = () => blockedBanner(true);
       req.onupgradeneeded = (e) => {
         const db = req.result;
         if (e.oldVersion < 1) {
@@ -38,8 +54,19 @@ export function openDB() {
           }
         }
       };
-      req.onsuccess = () => resolve(req.result);
-      req.onerror = () => reject(req.error);
+      req.onsuccess = () => {
+        blockedBanner(false);
+        const db = req.result;
+        // When a future update upgrades the schema in another window, release
+        // our connection and reload so we don't block it (and pick up the new
+        // code ourselves).
+        db.onversionchange = () => {
+          db.close();
+          window.location.reload();
+        };
+        resolve(db);
+      };
+      req.onerror = () => { blockedBanner(false); reject(req.error); };
     });
   }
   return dbPromise;
