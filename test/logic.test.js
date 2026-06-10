@@ -53,6 +53,36 @@ test('falls back to SEQ / description for a stable SKU when Dist # is blank', ()
   assert.match(items[1].distributor_sku, /^DESC-No Seq Either/);
 });
 
+test('parses real MyOrders format: "Grouped by:" header prefix and hierarchical rooms', () => {
+  const rows = [
+    [''],
+    ['MIT New Vassar (COMPASS-55692)'],
+    ['Printed By: TracyP01-3001'],
+    ['Grouped by: Classification', 'Seq', 'Item Description', 'Brand', 'Category', 'Distributor', 'Distribution Center', 'Dist #', 'Pack Type', 'Price Type', 'Price', 'Attributes', 'Status', 'UOM', 'Last Inventory Qty', 'Mfg', 'Mfg #', 'GTIN', 'Customer #'],
+    ['Store Room', '1', 'PAN COATING ARSL GRL CANOLA', 'PAM', 'ARSL/PAN COAT', 'Sysco Corporation', 'SYSCO BOSTON', '3500039', 'CS', '', '', '', 'Active', 'CS', '1', 'ConAgra', 'CA-1', '20064144322767', 'C-1'],
+    ['Walk-in fridge->Dairy', '2', 'MILK WHOLE GAL', 'HOOD', 'DAIRY', 'Sysco Corporation', 'SYSCO BOSTON', '1234567', 'EA', '', '', '', 'Active', 'EA', '4', 'Hood', 'H-1', '00044100117777', 'C-1'],
+    ['Paper / hallway', '3', 'PLATE PAPER 9IN', 'DIXIE', 'DISPOSABLES', 'Sysco Corporation', 'SYSCO BOSTON', '7654321', 'CS', '', '', '', 'Active', 'CS', '2', 'Dixie', 'D-1', '', 'C-1'],
+    ['Chemical->mop room', '4', 'DEGREASER HD', 'ECOLAB', 'CLEANING', 'Sysco Corporation', 'SYSCO BOSTON', '1111111', 'EA', '', '', '', 'Active', 'EA', '1', 'Ecolab', 'E-1', '', 'C-1'],
+    ['Unassigned', '5', 'PASTA PENNE', 'BARILLA', 'DRY', 'Sysco Corporation', 'SYSCO BOSTON', '2222222', 'CS', '', '', '', 'Active', 'CS', '3', 'Barilla', 'B-1', '10076808514978', 'C-1'],
+    ['DO NOT INVENTROY', '6', 'DISPLAY BASKET', 'HOUSE', 'MISC', 'Local', 'N/A', '3333333', 'EA', '', '', '', 'Active', 'EA', '1', 'N/A', 'N/A', '', 'C-1'],
+  ];
+  const { unit, items } = parseImportRows(rows);
+  assert.strictEqual(unit.unit_name, 'MIT New Vassar');
+  assert.strictEqual(unit.compass_id, 'COMPASS-55692');
+  assert.strictEqual(items.length, 6);
+
+  const byDesc = Object.fromEntries(items.map((i) => [i.item_description, i]));
+  assert.strictEqual(byDesc['PAN COATING ARSL GRL CANOLA'].audit_scope, 1);
+  assert.strictEqual(byDesc['MILK WHOLE GAL'].audit_scope, 1);
+  assert.strictEqual(byDesc['MILK WHOLE GAL'].storage_location, 'Walk-in fridge->Dairy');
+  assert.strictEqual(byDesc['PLATE PAPER 9IN'].audit_scope, 0, 'Paper / hallway is out of scope');
+  assert.strictEqual(byDesc['DEGREASER HD'].audit_scope, 0, 'Chemical->mop room is out of scope');
+  assert.strictEqual(byDesc['PASTA PENNE'].audit_scope, 1);
+  assert.strictEqual(byDesc['DISPLAY BASKET'].audit_scope, 0, 'DO NOT INVENTROY typo is out of scope');
+  // 14-digit GTINs pass through untouched
+  assert.strictEqual(byDesc['MILK WHOLE GAL'].gtin, '00044100117777');
+});
+
 test('restores GTIN leading zeros lost to number parsing', () => {
   assert.strictEqual(normalizeGtin(24100110056), '0024100110056'); // numeric cell
   assert.strictEqual(normalizeGtin('0024100110056'), '0024100110056'); // already text

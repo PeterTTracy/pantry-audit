@@ -1,14 +1,27 @@
 // Pure MyOrders-export parsing, shared by the app and the node:test suite.
 // Takes a sheet as an array of row arrays (XLSX.utils.sheet_to_json header:1).
 
-// Classifications that should NOT be in audit scope.
-const OUT_OF_SCOPE = new Set([
-  'do not inventory', 'paper goods', 'paper room', 'chemical room', 'cleaning',
-]);
+// Non-food classifications are out of audit scope. Real MyOrders exports use
+// site-specific names ("Paper / hallway", "Chemical->mop room"), so match on
+// the leading keyword of the top-level segment rather than exact names.
+// 'do not invent' catches both "DO NOT INVENTORY" and the "DO NOT INVENTROY"
+// typo that ships in real MyOrders data.
+const OUT_OF_SCOPE_PREFIXES = ['do not invent', 'paper', 'chemical', 'cleaning'];
 // Single-ingredient produce classification.
 const PRODUCE = 'produce walk-in';
 
+function isOutOfScope(classification) {
+  // Hierarchical classifications look like "Chemical->mop room"; scope is
+  // decided by the top-level segment.
+  const top = classification.toLowerCase().split('->')[0].trim();
+  return top === PRODUCE || OUT_OF_SCOPE_PREFIXES.some((p) => top.startsWith(p));
+}
+
 const norm = (s) => String(s == null ? '' : s).trim();
+
+// MyOrders prefixes the grouping column's header with the report's grouping
+// label, e.g. "Grouped by: Classification" -> "classification".
+const headerName = (s) => norm(s).toLowerCase().replace(/^[a-z ]+ by:\s*/, '');
 
 // Spreadsheets often store GTINs as numbers, dropping leading zeros
 // (0024100110056 -> 24100110056), which breaks barcode lookups. Zero-pad
@@ -34,7 +47,7 @@ export function extractUnit(rows) {
 // Find the header row index by locating the row that contains "Item Description".
 export function findHeaderRow(rows) {
   for (let i = 0; i < Math.min(rows.length, 12); i++) {
-    const cells = (rows[i] || []).map((c) => norm(c).toLowerCase());
+    const cells = (rows[i] || []).map(headerName);
     if (cells.includes('item description') && cells.includes('classification')) return i;
   }
   return -1;
@@ -53,7 +66,7 @@ export function parseImportRows(rows) {
     throw new Error('Could not find a header row containing "Classification" and "Item Description".');
   }
 
-  const header = (rows[headerIdx] || []).map((c) => norm(c).toLowerCase());
+  const header = (rows[headerIdx] || []).map(headerName);
   const col = (name) => header.indexOf(name.toLowerCase());
   const idx = {
     classification: col('classification'),
@@ -75,13 +88,12 @@ export function parseImportRows(rows) {
     if (!description) { skipped++; continue; }
 
     const classification = norm(idx.classification >= 0 ? row[idx.classification] : '');
-    const clsLower = classification.toLowerCase();
     const distNum = idx.dist_num >= 0 ? norm(row[idx.dist_num]) : '';
     const seq = idx.seq >= 0 ? norm(row[idx.seq]) : '';
     // Stable key even when Dist # is blank.
     const sku = distNum || (seq ? `SEQ-${seq}` : `DESC-${description}`.slice(0, 60));
 
-    const inScope = !(OUT_OF_SCOPE.has(clsLower) || clsLower === PRODUCE);
+    const inScope = !isOutOfScope(classification);
 
     items.push({
       unit_name: unit.unit_name,
