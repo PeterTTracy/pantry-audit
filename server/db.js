@@ -1,19 +1,20 @@
 const path = require('path');
 const fs = require('fs');
-const Database = require('better-sqlite3');
+const { DatabaseSync } = require('node:sqlite');
 
-const DATA_DIR = path.join(__dirname, '..', 'data');
+// PANTRY_DATA_DIR lets tests point at a throwaway database.
+const DATA_DIR = process.env.PANTRY_DATA_DIR || path.join(__dirname, '..', 'data');
 const DB_PATH = path.join(DATA_DIR, 'pantry_audit.db');
 
 if (!fs.existsSync(DATA_DIR)) {
   fs.mkdirSync(DATA_DIR, { recursive: true });
 }
 
-const db = new Database(DB_PATH);
-db.pragma('journal_mode = WAL');
-db.pragma('foreign_keys = ON');
+const raw = new DatabaseSync(DB_PATH);
+raw.exec('PRAGMA journal_mode = WAL');
+raw.exec('PRAGMA foreign_keys = ON');
 
-db.exec(`
+raw.exec(`
   CREATE TABLE IF NOT EXISTS products (
     id               INTEGER PRIMARY KEY AUTOINCREMENT,
     unit_name        TEXT NOT NULL,
@@ -57,5 +58,25 @@ db.exec(`
     notes                 TEXT
   );
 `);
+
+// Thin compatibility layer over node:sqlite exposing the better-sqlite3
+// surface the rest of the app uses: prepare().run/get/all, exec, transaction.
+const db = {
+  prepare: (sql) => raw.prepare(sql),
+  exec: (sql) => raw.exec(sql),
+  transaction(fn) {
+    return (...args) => {
+      raw.exec('BEGIN');
+      try {
+        const result = fn(...args);
+        raw.exec('COMMIT');
+        return result;
+      } catch (err) {
+        raw.exec('ROLLBACK');
+        throw err;
+      }
+    };
+  },
+};
 
 module.exports = db;

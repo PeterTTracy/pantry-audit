@@ -3,16 +3,19 @@
   "version": "1.0.0",
   "description": "Allergen compliance pantry audit tool for MIT Dining / Bon Appetit Management Company",
   "private": true,
+  "engines": {
+    "node": ">=22.5"
+  },
   "scripts": {
     "build": "vite build",
     "start": "npm run build && node server/index.js",
     "server": "node server/index.js",
     "dev:server": "nodemon server/index.js",
     "dev:client": "vite",
-    "dev": "concurrently -k -n server,client \"npm:dev:server\" \"npm:dev:client\""
+    "dev": "concurrently -k -n server,client \"npm:dev:server\" \"npm:dev:client\"",
+    "test": "node --test test/"
   },
   "dependencies": {
-    "better-sqlite3": "^11.8.1",
     "cors": "^2.8.5",
     "express": "^4.21.2",
     "multer": "^1.4.5-lts.1",
