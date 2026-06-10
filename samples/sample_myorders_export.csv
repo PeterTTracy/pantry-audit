@@ -1,0 +1,13 @@
+MyOrders Inventory Export,,,,,,,,,,,,,,,,,,
+MIT Forbes Family Cafe (COMPASS-44873),,,,,,,,,,,,,,,,,,
+Classification,Seq,Item Description,Brand,Category,Distributor,Distribution Center,Dist #,Pack Type,Price Type,Price,Attributes,Status,UOM,Last Inventory Qty,Mfg,Mfg #,GTIN,Customer #
+Dry Storage,1,Cheez-It Baked Snack Crackers Original,Cheez-It,Snacks,US Foods,Boston DC,USF-880421,CS,Contract,42.10,,Active,CS,3,Kellanova,KEL-1100,0024100110056,CUST-9001
+Dry Storage,2,Skippy Creamy Peanut Butter #10,Skippy,Spreads,US Foods,Boston DC,USF-119033,CS,Contract,38.55,,Active,CS,5,Hormel Foods,HRL-5019,0037600105019,CUST-9001
+Walk-in Cooler,3,Silk Unsweetened Almond Milk Half Gallon,Silk,Dairy Alt,Sysco,Boston DC,SYS-447781,CS,Contract,29.99,,Active,CS,8,Danone,DAN-1619,0025293001619,CUST-9001
+Dry Storage,4,All-Purpose Bulk Flour 50lb,King Arthur,Baking,Sysco,Boston DC,SYS-200114,BG,Contract,24.00,,Active,BG,2,King Arthur Baking,KAB-50,,CUST-9001
+Walk-in Cooler,5,Tillamook Medium Cheddar 2lb,Tillamook,Dairy,Sysco,Boston DC,SYS-551902,EA,Contract,12.75,,Active,EA,10,Tillamook,TIL-0123,0072830000123,CUST-9001
+Produce Walk-in,6,Roma Tomatoes 25lb,Fresh,Produce,Sysco,Boston DC,SYS-PROD-77,CS,Market,18.00,,Active,CS,4,Garden Fresh,GF-TOM,,CUST-9001
+Paper Goods,7,9in Paper Plates 1000ct,Dixie,Disposables,US Foods,Boston DC,USF-PAP-22,CS,Contract,31.00,,Active,CS,6,Dixie,DX-9,,CUST-9001
+Chemical Room,8,Sanitizer Concentrate 1gal,Ecolab,Cleaning,US Foods,Boston DC,USF-CHM-04,EA,Contract,22.40,,Active,EA,3,Ecolab,EC-SAN,,CUST-9001
+Dry Storage,9,Barilla Penne Pasta 20lb,Barilla,Dry Goods,US Foods,Boston DC,USF-771140,CS,Contract,26.30,,Active,CS,7,Barilla America,BAR-4971,0076808514971,CUST-9001
+DO NOT INVENTORY,10,Display Sample Basket,House,Misc,Local Direct,Boston DC,DNI-001,EA,None,0.00,,Active,EA,1,N/A,N/A,,CUST-9001
