@@ -129,8 +129,22 @@ export default function AuditForm() {
       </div>
 
       {hadPrefill && (
-        <div className="alert alert-warning">
-          ⚠️ Data pre-filled from Open Food Facts. <strong>Verify against the physical label before saving.</strong>
+        <div className="alert alert-warning prefill-banner">
+          <div>
+            ⚠️ Data pre-filled from Open Food Facts
+            {data.prefill?.product_name && (
+              <> — matched: <strong>{data.prefill.product_name}</strong>
+                {data.prefill.brands ? ` (${data.prefill.brands})` : ''}</>
+            )}
+            . <strong>Verify against the physical label before saving.</strong>
+          </div>
+          {data.prefill?.label_image && (
+            <a href={data.prefill.label_image} target="_blank" rel="noreferrer"
+              title="Open full-size label photo from Open Food Facts">
+              <img className="prefill-label-img" src={data.prefill.label_image}
+                alt="Ingredients label from Open Food Facts" />
+            </a>
+          )}
         </div>
       )}
 

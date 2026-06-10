@@ -9,6 +9,7 @@ import { parseImportRows, extractUnit, findHeaderRow, normalizeGtin } from '../s
 import { computeCompliance } from '../src/lib/compliance.js';
 import { buildExportSheets, sheetName } from '../src/lib/exportRows.js';
 import { tagsToFlags, tagsToText } from '../src/allergens.js';
+import { innerGtin13 } from '../src/lib/off.js';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 
@@ -168,6 +169,20 @@ test('sheet names are deduplicated and sanitized', () => {
   assert.strictEqual(sheetName('Cafe: A/B', used), 'Cafe  A B');
   assert.strictEqual(sheetName('Cafe: A/B', used), 'Cafe  A B 2');
   assert.strictEqual(sheetName('X'.repeat(40), used).length <= 31, true);
+});
+
+// ---- GS1 case code -> consumer code ----------------------------------------------
+
+test('derives the consumer GTIN-13 from a 14-digit case code', () => {
+  // Indicator 0: contained code is just the last 13 digits (check digit unchanged).
+  assert.strictEqual(innerGtin13('00024100110056'), '0024100110056');
+  // Indicator 2 (PAM case code): check digit must be recomputed.
+  assert.strictEqual(innerGtin13('20064144322767'), '0064144322763');
+  // Round-trip property: result is a valid EAN-13 (its own check digit verifies).
+  const ean = innerGtin13('10013000652008');
+  let sum = 0;
+  for (let i = 0; i < 12; i++) sum += Number(ean[i]) * (i % 2 === 0 ? 1 : 3);
+  assert.strictEqual(Number(ean[12]), (10 - (sum % 10)) % 10);
 });
 
 // ---- allergen tag mapping ------------------------------------------------------
