@@ -47,12 +47,16 @@ any static host (GitHub Pages, Netlify, Cloudflare Pages — all free):
 1. **Unit Select** — choose a dining unit + enter your name.
 2. **Location Dashboard** — storage locations with `X / Y reviewed` completion badges (red/amber/green).
 3. **Item List** — audit-scope items, sorted pending → in-progress → complete; text search + allergen filter.
+   Swipe an item left to remove it from the audit list (undo toast; restorable in Settings;
+   re-imports don't resurrect removed items).
 4. **Audit Form** — vendor type, ingredients, voluntary disclaimers, allergen checkboxes,
    Ask-Us flag (auto-set for House-Made / Local Artisan / Imported Non-English), label photo, notes.
    **Save Progress** keeps the item in-progress; **Complete Audit** requires vendor type +
    ingredients and stamps the review-due date (+90 days).
 5. **Compliance Dashboard** — per-unit completion table, overdue items, Ask-Us items grouped by unit, and `.xlsx` export.
 6. **Import** — MyOrders inventory loads + JSON backup/restore.
+7. **Settings** — add/remove houses (dining units). Deleting a house requires a second
+   confirmation tap and erases all of its data; restore swiped-away items per house.
 
 ## Import flow
 

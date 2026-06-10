@@ -22,17 +22,66 @@ const plusDaysISO = (days) => {
 };
 const bool = (v) => (v === true || v === 'true' || v === '1' || v === 1 ? 1 : 0);
 
-// ---- Units ----------------------------------------------------------------
+// ---- Units / houses ---------------------------------------------------------
 export async function listUnits() {
-  const products = await tx(['products'], 'readonly', (t) => reqp(t.objectStore('products').getAll()));
-  const byUnit = new Map();
+  const [unitRows, products] = await tx(['units', 'products'], 'readonly', async (t) => [
+    await reqp(t.objectStore('units').getAll()),
+    await reqp(t.objectStore('products').getAll()),
+  ]);
+  const byUnit = new Map(unitRows.map((u) => [
+    u.unit_name, { unit_name: u.unit_name, compass_id: u.compass_id || null, total_products: 0 },
+  ]));
   for (const p of products) {
     let u = byUnit.get(p.unit_name);
     if (!u) { u = { unit_name: p.unit_name, compass_id: null, total_products: 0 }; byUnit.set(p.unit_name, u); }
     if (p.compass_id) u.compass_id = p.compass_id;
-    u.total_products++;
+    if (!p.removed) u.total_products++;
   }
   return [...byUnit.values()].sort((a, b) => a.unit_name.localeCompare(b.unit_name));
+}
+
+export async function addUnit(unitName, compassId) {
+  const name = String(unitName || '').trim();
+  if (!name) throw new Error('House name is required.');
+  let compass = String(compassId || '').trim().toUpperCase() || null;
+  if (compass && /^\d+$/.test(compass)) compass = `COMPASS-${compass}`;
+  return tx(['units'], 'readwrite', async (t) => {
+    const existing = await reqp(t.objectStore('units').get(name));
+    if (existing) throw new Error(`"${name}" already exists.`);
+    await reqp(t.objectStore('units').add({ unit_name: name, compass_id: compass }));
+    return { unit_name: name, compass_id: compass };
+  });
+}
+
+// Permanently deletes the unit and ALL of its products, audits, and photos.
+export async function deleteUnit(unitName) {
+  return tx(['units', 'products', 'audits', 'photos'], 'readwrite', async (t) => {
+    await reqp(t.objectStore('units').delete(unitName));
+    const prods = await reqp(t.objectStore('products').index('unit_name').getAll(IDBKeyRange.only(unitName)));
+    for (const p of prods) {
+      await reqp(t.objectStore('products').delete(p.id));
+      await reqp(t.objectStore('audits').delete(p.id));
+      await reqp(t.objectStore('photos').delete(p.id));
+    }
+    return { deleted_products: prods.length };
+  });
+}
+
+// Per-unit stats for the Settings screen.
+export async function unitStats() {
+  const units = await listUnits();
+  const products = await tx(['products'], 'readonly', (t) => reqp(t.objectStore('products').getAll()));
+  const stats = new Map(units.map((u) => [u.unit_name, { ...u, in_scope: 0, complete: 0, removed: 0 }]));
+  for (const p of products) {
+    const s = stats.get(p.unit_name);
+    if (!s) continue;
+    if (p.removed) { s.removed++; continue; }
+    if (p.audit_scope === 1) {
+      s.in_scope++;
+      if (p.audit_status === 'complete') s.complete++;
+    }
+  }
+  return [...stats.values()];
 }
 
 // ---- Locations (for a unit) with completion counts -------------------------
@@ -40,7 +89,7 @@ export async function listLocations(unit) {
   const products = await unitProducts(unit);
   const byLoc = new Map();
   for (const p of products) {
-    if (p.audit_scope !== 1) continue;
+    if (p.audit_scope !== 1 || p.removed) continue;
     let l = byLoc.get(p.storage_location);
     if (!l) { l = { storage_location: p.storage_location, total: 0, reviewed: 0 }; byLoc.set(p.storage_location, l); }
     l.total++;
@@ -66,7 +115,7 @@ export async function listProducts({ unit, location, search, allergen }) {
   const q = (search || '').toLowerCase();
 
   return products
-    .filter((p) => p.audit_scope === 1)
+    .filter((p) => p.audit_scope === 1 && !p.removed)
     .filter((p) => !location || p.storage_location === location)
     .filter((p) => !q ||
       String(p.item_description || '').toLowerCase().includes(q) ||
@@ -170,6 +219,43 @@ export async function saveAudit(id, fields, photoFile) {
   });
 }
 
+// ---- Remove / restore items from the audit list -------------------------------
+// "Removed" excludes an item from lists, compliance, and export without
+// deleting its data; re-imports won't resurrect it. Restorable in Settings.
+export async function removeFromAudit(id) {
+  const pid = Number(id);
+  return tx(['products'], 'readwrite', async (t) => {
+    const p = await reqp(t.objectStore('products').get(pid));
+    if (!p) throw new Error('Product not found');
+    await reqp(t.objectStore('products').put({ ...p, removed: 1 }));
+    return { ok: true };
+  });
+}
+
+export async function restoreProduct(id) {
+  const pid = Number(id);
+  return tx(['products'], 'readwrite', async (t) => {
+    const p = await reqp(t.objectStore('products').get(pid));
+    if (!p) throw new Error('Product not found');
+    await reqp(t.objectStore('products').put({ ...p, removed: 0 }));
+    return { ok: true };
+  });
+}
+
+export async function restoreRemoved(unitName) {
+  return tx(['products'], 'readwrite', async (t) => {
+    const prods = await reqp(t.objectStore('products').index('unit_name').getAll(IDBKeyRange.only(unitName)));
+    let restored = 0;
+    for (const p of prods) {
+      if (p.removed) {
+        await reqp(t.objectStore('products').put({ ...p, removed: 0 }));
+        restored++;
+      }
+    }
+    return { restored };
+  });
+}
+
 // ---- Import a MyOrders export ----------------------------------------------
 export async function importFile(file) {
   const buf = await file.arrayBuffer();
@@ -186,17 +272,23 @@ export async function importFile(file) {
   const { unit, items, skipped, duplicates } = parseImportRows(rows);
 
   let inserted = 0, updated = 0, outOfScope = 0;
-  await tx(['products'], 'readwrite', async (t) => {
+  await tx(['units', 'products'], 'readwrite', async (t) => {
+    await reqp(t.objectStore('units').put({ unit_name: unit.unit_name, compass_id: unit.compass_id }));
     const store = t.objectStore('products');
     const bySku = store.index('unit_sku');
     for (const item of items) {
       const existing = await reqp(bySku.get(IDBKeyRange.only([item.unit_name, item.distributor_sku])));
       if (existing) {
-        // audit_status and gtin_prefill are intentionally left untouched.
-        await reqp(store.put({ ...existing, ...item, id: existing.id, audit_status: existing.audit_status, gtin_prefill: existing.gtin_prefill }));
+        // audit_status, gtin_prefill, and removed are intentionally left untouched.
+        await reqp(store.put({
+          ...existing, ...item, id: existing.id,
+          audit_status: existing.audit_status,
+          gtin_prefill: existing.gtin_prefill,
+          removed: existing.removed || 0,
+        }));
         updated++;
       } else {
-        await reqp(store.add({ ...item, audit_status: 'pending', gtin_prefill: null }));
+        await reqp(store.add({ ...item, audit_status: 'pending', gtin_prefill: null, removed: 0 }));
         inserted++;
       }
       if (!item.audit_scope) outOfScope++;
@@ -237,7 +329,7 @@ export async function compliance() {
     await reqp(t.objectStore('products').getAll()),
     await reqp(t.objectStore('audits').getAll()),
   ]);
-  return computeCompliance(products, audits, todayISO());
+  return computeCompliance(products.filter((p) => !p.removed), audits, todayISO());
 }
 
 // ---- Export to .xlsx (browser download) --------------------------------------
@@ -250,7 +342,7 @@ export async function exportXlsx() {
   const photoNames = new Map(photos.map((p) => [p.product_id, p.name]));
 
   const wb = XLSX.utils.book_new();
-  for (const { sheet, rows } of buildExportSheets(products, audits, photoNames)) {
+  for (const { sheet, rows } of buildExportSheets(products.filter((p) => !p.removed), audits, photoNames)) {
     const ws = rows.length
       ? XLSX.utils.json_to_sheet(rows)
       : XLSX.utils.aoa_to_sheet([['No audit-scope items for this unit.']]);
@@ -264,11 +356,12 @@ export async function exportXlsx() {
 
 // ---- Backup & restore (JSON, photos excluded) --------------------------------
 export async function downloadBackup() {
-  const [products, audits] = await tx(['products', 'audits'], 'readonly', async (t) => [
+  const [units, products, audits] = await tx(['units', 'products', 'audits'], 'readonly', async (t) => [
+    await reqp(t.objectStore('units').getAll()),
     await reqp(t.objectStore('products').getAll()),
     await reqp(t.objectStore('audits').getAll()),
   ]);
-  const payload = { app: 'pantry-audit', version: 1, exported_at: new Date().toISOString(), products, audits };
+  const payload = { app: 'pantry-audit', version: 2, exported_at: new Date().toISOString(), units, products, audits };
   const blob = new Blob([JSON.stringify(payload)], { type: 'application/json' });
   const a = document.createElement('a');
   a.href = URL.createObjectURL(blob);
@@ -284,9 +377,19 @@ export async function restoreBackup(file) {
   if (payload.app !== 'pantry-audit' || !Array.isArray(payload.products) || !Array.isArray(payload.audits)) {
     throw new Error('Not a valid Pantry Audit backup file.');
   }
-  await tx(['products', 'audits'], 'readwrite', async (t) => {
+  // v1 backups have no units array; derive it from products.
+  const units = Array.isArray(payload.units) ? payload.units : (() => {
+    const seen = new Map();
+    for (const p of payload.products) {
+      if (!seen.has(p.unit_name)) seen.set(p.unit_name, { unit_name: p.unit_name, compass_id: p.compass_id || null });
+    }
+    return [...seen.values()];
+  })();
+  await tx(['units', 'products', 'audits'], 'readwrite', async (t) => {
+    await reqp(t.objectStore('units').clear());
     await reqp(t.objectStore('products').clear());
     await reqp(t.objectStore('audits').clear());
+    for (const u of units) await reqp(t.objectStore('units').put(u));
     for (const p of payload.products) await reqp(t.objectStore('products').put(p));
     for (const a of payload.audits) await reqp(t.objectStore('audits').put(a));
   });

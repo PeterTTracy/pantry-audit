@@ -150,10 +150,12 @@ const ALLERGEN_KEYS = [
 ];
 
 export async function seedIfEmpty() {
-  return tx(['products', 'audits'], 'readwrite', async (t) => {
+  return tx(['units', 'products', 'audits'], 'readwrite', async (t) => {
     const products = t.objectStore('products');
     const count = await reqp(products.count());
     if (count > 0) return false;
+
+    await reqp(t.objectStore('units').put({ unit_name: UNIT, compass_id: COMPASS }));
 
     for (const s of SAMPLES) {
       const id = await reqp(products.add({

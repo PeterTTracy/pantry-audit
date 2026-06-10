@@ -7,6 +7,7 @@ import ItemList from './pages/ItemList.jsx';
 import AuditForm from './pages/AuditForm.jsx';
 import ComplianceDashboard from './pages/ComplianceDashboard.jsx';
 import ImportScreen from './pages/Import.jsx';
+import Settings from './pages/Settings.jsx';
 
 function TopBar() {
   const { unit, reviewer, clear } = useSession();
@@ -22,6 +23,7 @@ function TopBar() {
         <Link to="/locations">Locations</Link>
         <Link to="/import">Import</Link>
         <Link to="/compliance">Compliance</Link>
+        <Link to="/settings">⚙</Link>
       </nav>
       <div className="topbar-right">
         {unit && <span className="chip chip-unit">{unit.unit_name}</span>}
@@ -51,6 +53,7 @@ function Shell() {
           <Route path="/audit/:id" element={<RequireUnit><AuditForm /></RequireUnit>} />
           <Route path="/import" element={<ImportScreen />} />
           <Route path="/compliance" element={<ComplianceDashboard />} />
+          <Route path="/settings" element={<Settings />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </main>
