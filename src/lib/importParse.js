@@ -1,21 +1,6 @@
 // Pure MyOrders-export parsing, shared by the app and the node:test suite.
 // Takes a sheet as an array of row arrays (XLSX.utils.sheet_to_json header:1).
-
-// Non-food classifications are out of audit scope. Real MyOrders exports use
-// site-specific names ("Paper / hallway", "Chemical->mop room"), so match on
-// the leading keyword of the top-level segment rather than exact names.
-// 'do not invent' catches both "DO NOT INVENTORY" and the "DO NOT INVENTROY"
-// typo that ships in real MyOrders data.
-const OUT_OF_SCOPE_PREFIXES = ['do not invent', 'paper', 'chemical', 'cleaning'];
-// Single-ingredient produce classification.
-const PRODUCE = 'produce walk-in';
-
-function isOutOfScope(classification) {
-  // Hierarchical classifications look like "Chemical->mop room"; scope is
-  // decided by the top-level segment.
-  const top = classification.toLowerCase().split('->')[0].trim();
-  return top === PRODUCE || OUT_OF_SCOPE_PREFIXES.some((p) => top.startsWith(p));
-}
+import { scopeReason, qtyTotal } from './scopeRules.js';
 
 const norm = (s) => String(s == null ? '' : s).trim();
 
@@ -53,8 +38,32 @@ export function findHeaderRow(rows) {
   return -1;
 }
 
-// Parse the full sheet. Returns { unit, items, skipped } or throws with a
-// user-facing message.
+// Duplicate-SKU key: first non-blank of Dist # > Customer # > GTIN > Mfg #.
+// Dist # stays unprefixed so existing devices' products keep matching on
+// re-import; the alternates are prefixed so different ID types never collide.
+function skuFor({ distNum, customer, gtin, mfgNum, seq, description }) {
+  if (distNum) return distNum;
+  if (customer) return `C:${customer}`;
+  if (gtin) return `G:${gtin}`;
+  if (mfgNum) return `M:${mfgNum}`;
+  if (seq) return `SEQ-${seq}`;
+  return `DESC-${description}`.slice(0, 60);
+}
+
+// When the same SKU appears in several rows, keep the best one:
+// in-audit-scope beats out-of-scope, then a real room beats 'Unassigned'.
+function betterRow(candidate, kept) {
+  const keptIn = kept.scope_reason === null;
+  const candIn = candidate.scope_reason === null;
+  if (candIn !== keptIn) return candIn;
+  const keptUn = kept.storage_location === 'Unassigned';
+  const candUn = candidate.storage_location === 'Unassigned';
+  if (candUn !== keptUn) return keptUn;
+  return false; // first occurrence wins
+}
+
+// Parse the full sheet. Returns { unit, items, skipped, duplicates, buckets }
+// or throws with a user-facing message.
 export function parseImportRows(rows) {
   const unit = extractUnit(rows);
   if (!unit) {
@@ -73,42 +82,56 @@ export function parseImportRows(rows) {
     seq: col('seq'),
     description: col('item description'),
     brand: col('brand'),
+    category: col('category'),
     distributor: col('distributor'),
     dist_num: col('dist #'),
     mfg: col('mfg'),
+    mfg_num: col('mfg #'),
     gtin: col('gtin'),
+    customer: col('customer #'),
+    qty: col('last inventory qty'),
   };
+  const cell = (row, i) => (i >= 0 ? norm(row[i]) : '');
 
-  // One row per unit+SKU: first occurrence wins, except a row with a real
-  // room assignment replaces an earlier 'Unassigned' one.
   const byKey = new Map();
   let skipped = 0;
   let duplicates = 0;
 
   for (let i = headerIdx + 1; i < rows.length; i++) {
     const row = rows[i] || [];
-    const description = norm(row[idx.description]);
+    const description = cell(row, idx.description);
     if (!description) { skipped++; continue; }
 
-    const classification = norm(idx.classification >= 0 ? row[idx.classification] : '');
-    const distNum = idx.dist_num >= 0 ? norm(row[idx.dist_num]) : '';
-    const seq = idx.seq >= 0 ? norm(row[idx.seq]) : '';
-    // Stable key even when Dist # is blank.
-    const sku = distNum || (seq ? `SEQ-${seq}` : `DESC-${description}`.slice(0, 60));
+    const classification = cell(row, idx.classification);
+    const clsTop = classification.toLowerCase().split('->')[0].trim();
+    const category = cell(row, idx.category);
+    const gtin = idx.gtin >= 0 ? normalizeGtin(row[idx.gtin]) : null;
+    const qty = idx.qty >= 0 ? qtyTotal(cell(row, idx.qty)) : null;
 
-    const inScope = !isOutOfScope(classification);
+    const sku = skuFor({
+      distNum: cell(row, idx.dist_num),
+      customer: cell(row, idx.customer),
+      gtin,
+      mfgNum: cell(row, idx.mfg_num),
+      seq: cell(row, idx.seq),
+      description,
+    });
+
+    const reason = scopeReason({ description, clsTop, category, qty });
 
     const item = {
       unit_name: unit.unit_name,
       compass_id: unit.compass_id,
       storage_location: classification || 'Unassigned',
       item_description: description,
-      brand: idx.brand >= 0 ? norm(row[idx.brand]) : '',
-      distributor: idx.distributor >= 0 ? norm(row[idx.distributor]) : '',
+      brand: cell(row, idx.brand),
+      distributor: cell(row, idx.distributor),
       distributor_sku: sku,
-      gtin: idx.gtin >= 0 ? normalizeGtin(row[idx.gtin]) : null,
-      manufacturer: idx.mfg >= 0 ? norm(row[idx.mfg]) : '',
-      audit_scope: inScope ? 1 : 0,
+      gtin,
+      manufacturer: cell(row, idx.mfg),
+      audit_scope: reason === null ? 1 : 0,
+      scope_reason: reason,
+      qty_total: qty,
     };
 
     const prev = byKey.get(sku);
@@ -116,11 +139,15 @@ export function parseImportRows(rows) {
       byKey.set(sku, item);
     } else {
       duplicates++;
-      if (prev.storage_location === 'Unassigned' && item.storage_location !== 'Unassigned') {
-        byKey.set(sku, item);
-      }
+      if (betterRow(item, prev)) byKey.set(sku, item);
     }
   }
 
-  return { unit, items: [...byKey.values()], skipped, duplicates };
+  const items = [...byKey.values()];
+  const buckets = { non_food: 0, do_not_inventory: 0, zero_qty: 0, single_ingredient: 0 };
+  for (const it of items) {
+    if (it.scope_reason) buckets[it.scope_reason]++;
+  }
+
+  return { unit, items, skipped, duplicates, buckets };
 }

@@ -269,7 +269,7 @@ export async function importFile(file) {
     throw new Error(`Could not parse file: ${err.message}`);
   }
 
-  const { unit, items, skipped, duplicates } = parseImportRows(rows);
+  const { unit, items, skipped, duplicates, buckets } = parseImportRows(rows);
 
   let inserted = 0, updated = 0, outOfScope = 0;
   await tx(['units', 'products'], 'readwrite', async (t) => {
@@ -302,7 +302,7 @@ export async function importFile(file) {
     ok: true,
     unit_name: unit.unit_name,
     compass_id: unit.compass_id,
-    inserted, updated, skipped, duplicates, out_of_scope: outOfScope,
+    inserted, updated, skipped, duplicates, out_of_scope: outOfScope, buckets,
   };
 }
 

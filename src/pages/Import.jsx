@@ -72,10 +72,12 @@ export default function ImportScreen() {
           <div className="alert alert-success">
             <strong>Import complete — {result.unit_name} ({result.compass_id})</strong>
             <ul className="result-list">
-              <li>{result.inserted} new products added</li>
-              <li>{result.updated} existing products updated</li>
-              <li>{result.out_of_scope} marked out of audit scope</li>
-              {result.duplicates > 0 && <li>{result.duplicates} duplicate SKU rows ignored</li>}
+              <li><strong>{result.inserted + result.updated - result.out_of_scope} food products in audit scope</strong> ({result.inserted} new, {result.updated} updated)</li>
+              {result.buckets?.non_food > 0 && <li>{result.buckets.non_food} non-food items excluded</li>}
+              {result.buckets?.do_not_inventory > 0 && <li>{result.buckets.do_not_inventory} marked "do not inventory"</li>}
+              {result.buckets?.zero_qty > 0 && <li>{result.buckets.zero_qty} zero-quantity items excluded</li>}
+              {result.buckets?.single_ingredient > 0 && <li>{result.buckets.single_ingredient} single-ingredient staples excluded</li>}
+              {result.duplicates > 0 && <li>{result.duplicates} duplicate SKU rows collapsed</li>}
               {result.skipped > 0 && <li>{result.skipped} rows skipped (no item description)</li>}
             </ul>
             <p className="muted small">

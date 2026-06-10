@@ -67,19 +67,20 @@ test('parses real MyOrders format: "Grouped by:" header prefix and hierarchical 
     ['Unassigned', '5', 'PASTA PENNE', 'BARILLA', 'DRY', 'Sysco Corporation', 'SYSCO BOSTON', '2222222', 'CS', '', '', '', 'Active', 'CS', '3', 'Barilla', 'B-1', '10076808514978', 'C-1'],
     ['DO NOT INVENTROY', '6', 'DISPLAY BASKET', 'HOUSE', 'MISC', 'Local', 'N/A', '3333333', 'EA', '', '', '', 'Active', 'EA', '1', 'N/A', 'N/A', '', 'C-1'],
   ];
-  const { unit, items } = parseImportRows(rows);
+  const { unit, items, buckets } = parseImportRows(rows);
   assert.strictEqual(unit.unit_name, 'MIT New Vassar');
   assert.strictEqual(unit.compass_id, 'COMPASS-55692');
   assert.strictEqual(items.length, 6);
 
   const byDesc = Object.fromEntries(items.map((i) => [i.item_description, i]));
-  assert.strictEqual(byDesc['PAN COATING ARSL GRL CANOLA'].audit_scope, 1);
+  assert.strictEqual(byDesc['PAN COATING ARSL GRL CANOLA'].scope_reason, 'single_ingredient');
   assert.strictEqual(byDesc['MILK WHOLE GAL'].audit_scope, 1);
   assert.strictEqual(byDesc['MILK WHOLE GAL'].storage_location, 'Walk-in fridge->Dairy');
-  assert.strictEqual(byDesc['PLATE PAPER 9IN'].audit_scope, 0, 'Paper / hallway is out of scope');
-  assert.strictEqual(byDesc['DEGREASER HD'].audit_scope, 0, 'Chemical->mop room is out of scope');
-  assert.strictEqual(byDesc['PASTA PENNE'].audit_scope, 1);
-  assert.strictEqual(byDesc['DISPLAY BASKET'].audit_scope, 0, 'DO NOT INVENTROY typo is out of scope');
+  assert.strictEqual(byDesc['PLATE PAPER 9IN'].scope_reason, 'non_food');
+  assert.strictEqual(byDesc['DEGREASER HD'].scope_reason, 'non_food');
+  assert.strictEqual(byDesc['PASTA PENNE'].scope_reason, 'single_ingredient', 'plain pasta is a single-ingredient staple');
+  assert.strictEqual(byDesc['DISPLAY BASKET'].scope_reason, 'do_not_inventory', 'DO NOT INVENTROY typo');
+  assert.deepStrictEqual(buckets, { non_food: 2, do_not_inventory: 1, zero_qty: 0, single_ingredient: 2 });
   // 14-digit GTINs pass through untouched
   assert.strictEqual(byDesc['MILK WHOLE GAL'].gtin, '00044100117777');
 });
@@ -169,6 +170,70 @@ test('sheet names are deduplicated and sanitized', () => {
   assert.strictEqual(sheetName('Cafe: A/B', used), 'Cafe  A B');
   assert.strictEqual(sheetName('Cafe: A/B', used), 'Cafe  A B 2');
   assert.strictEqual(sheetName('X'.repeat(40), used).length <= 31, true);
+});
+
+// ---- cleaner rule buckets (ported from clean_inventory.py) --------------------------
+
+const HDR = ['Classification', 'Seq', 'Item Description', 'Brand', 'Category', 'Distributor', 'DC', 'Dist #', 'PT', 'PrT', 'Pr', 'At', 'St', 'UOM', 'Last Inventory Qty', 'Mfg', 'Mfg #', 'GTIN', 'Customer #'];
+const mkRow = (cls, desc, { cat = '', dist = '', qty = '1.00 CS', mfgNum = '', gtin = '', cust = '', seq = '' } = {}) =>
+  [cls, seq, desc, 'B', cat, 'Sysco', 'DC', dist, '', '', '', '', '', '', qty, 'M', mfgNum, gtin, cust];
+const parse = (rows) => parseImportRows([['My Cafe (COMPASS-1)'], HDR, ...rows]);
+
+test('FOOD_GUARD protects food-in-a-vessel from non-food keywords', () => {
+  const { items } = parse([
+    mkRow('Dry', 'CUP PAPER HOT 12OZ', { dist: '1' }),
+    mkRow('Dry', 'PEANUT BUTTER CUP 12CT', { dist: '2' }),
+    mkRow('Dry', 'WRAP TORTILLA FLOUR 12IN', { dist: '3' }),
+    mkRow('Dry', 'FOIL ROLL 18IN', { dist: '4' }),
+  ]);
+  const by = Object.fromEntries(items.map((i) => [i.item_description, i.scope_reason]));
+  assert.strictEqual(by['CUP PAPER HOT 12OZ'], 'non_food');
+  assert.strictEqual(by['PEANUT BUTTER CUP 12CT'], null);
+  assert.strictEqual(by['WRAP TORTILLA FLOUR 12IN'], null);
+  assert.strictEqual(by['FOIL ROLL 18IN'], 'non_food');
+});
+
+test('category-based non-food and zero-quantity exclusion', () => {
+  const { items, buckets } = parse([
+    mkRow('Dry', 'GENERIC ITEM', { cat: 'CUPS PAPER', dist: '1' }),
+    mkRow('Dry', 'SOUP CHICKEN NDL', { dist: '2', qty: '0.00 CS/0.00 EA' }),
+    mkRow('Dry', 'SOUP TOMATO BISQUE', { dist: '3', qty: '0.00 CS/2.00 EA' }),
+  ]);
+  const by = Object.fromEntries(items.map((i) => [i.item_description, i.scope_reason]));
+  assert.strictEqual(by['GENERIC ITEM'], 'non_food');
+  assert.strictEqual(by['SOUP CHICKEN NDL'], 'zero_qty');
+  assert.strictEqual(by['SOUP TOMATO BISQUE'], null, 'stock in any unit keeps the item');
+  assert.strictEqual(buckets.zero_qty, 1);
+});
+
+test('SINGLE_KEEP protects blends and processed items from the single-ingredient rule', () => {
+  const { items } = parse([
+    mkRow('Dry', 'FLOUR AP UNBLEACHED 50LB', { dist: '1' }),
+    mkRow('Dry', 'SPICE CUMIN GROUND', { dist: '2' }),
+    mkRow('Dry', 'SPICE SEASONING CAJUN', { dist: '3' }),
+    mkRow('Dry', 'CHEESE AMERICAN SLICED', { dist: '4' }),
+  ]);
+  const by = Object.fromEntries(items.map((i) => [i.item_description, i.scope_reason]));
+  assert.strictEqual(by['FLOUR AP UNBLEACHED 50LB'], 'single_ingredient');
+  assert.strictEqual(by['SPICE CUMIN GROUND'], 'single_ingredient');
+  assert.strictEqual(by['SPICE SEASONING CAJUN'], null, 'SEASONING is kept');
+  assert.strictEqual(by['CHEESE AMERICAN SLICED'], null, 'AMERICAN (processed) is kept');
+});
+
+test('SKU key chain falls back Dist # > Customer # > GTIN > Mfg #', () => {
+  const { items, duplicates } = parse([
+    mkRow('Dry', 'ITEM A', { dist: '111' }),
+    mkRow('Dry', 'ITEM B', { cust: '222' }),
+    mkRow('Dry', 'ITEM C', { gtin: '0024100110056' }),
+    mkRow('Dry', 'ITEM D', { mfgNum: '333' }),
+    mkRow('Cooler', 'ITEM C DUP', { gtin: '0024100110056' }), // same GTIN -> duplicate
+  ]);
+  const skus = Object.fromEntries(items.map((i) => [i.item_description, i.distributor_sku]));
+  assert.strictEqual(skus['ITEM A'], '111');
+  assert.strictEqual(skus['ITEM B'], 'C:222');
+  assert.strictEqual(skus['ITEM C'], 'G:0024100110056');
+  assert.strictEqual(skus['ITEM D'], 'M:333');
+  assert.strictEqual(duplicates, 1);
 });
 
 // ---- GS1 case code -> consumer code ----------------------------------------------
