@@ -97,18 +97,33 @@ router.post('/products/:id/audit', photoUpload.single('label_photo'), (req, res)
     askUs = ASK_US_VENDOR_TYPES.has(b.vendor_type) ? 1 : 0;
   }
 
+  // 'complete' (default) finalizes the audit; 'in_progress' saves a draft.
+  const status = b.status === 'in_progress' ? 'in_progress' : 'complete';
+  if (status === 'complete') {
+    if (!b.vendor_type) {
+      return res.status(400).json({ error: 'Vendor type is required to complete an audit.' });
+    }
+    if (!b.ingredients || !String(b.ingredients).trim()) {
+      return res.status(400).json({ error: 'Ingredients are required to complete an audit.' });
+    }
+  }
+
   const existing = db.prepare('SELECT * FROM audit_records WHERE product_id = ?').get(product.id);
 
   // Photo path: new upload wins; otherwise keep prior photo.
   let photoWeb = existing ? existing.label_photo_path : null;
   if (req.file) photoWeb = toWebPath(req.file.path);
 
-  const today = new Date().toISOString().slice(0, 10);
-  const due = new Date();
-  due.setDate(due.getDate() + 90);
-  const reviewDue = due.toISOString().slice(0, 10);
+  // Review dates only exist once an audit is signed off.
+  let today = null, reviewDue = null;
+  if (status === 'complete') {
+    today = new Date().toISOString().slice(0, 10);
+    const due = new Date();
+    due.setDate(due.getDate() + 90);
+    reviewDue = due.toISOString().slice(0, 10);
+  }
 
-  const prefillUsed = bool(b.gtin_prefill_used) || (product.gtin_prefill ? 1 : 0);
+  const prefillUsed = bool(b.gtin_prefill_used);
 
   const record = {
     product_id: product.id,
@@ -170,11 +185,11 @@ router.post('/products/:id/audit', photoUpload.single('label_photo'), (req, res)
            @gtin_prefill_used, @notes)
       `).run(record);
     }
-    db.prepare("UPDATE products SET audit_status = 'complete' WHERE id = ?").run(product.id);
+    db.prepare('UPDATE products SET audit_status = ? WHERE id = ?').run(status, product.id);
   });
   tx();
 
-  res.json({ ok: true, product_id: product.id, label_photo_path: photoWeb });
+  res.json({ ok: true, product_id: product.id, status, label_photo_path: photoWeb });
 });
 
 // ---- Compliance summary -------------------------------------------------

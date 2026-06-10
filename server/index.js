@@ -1,5 +1,6 @@
 const path = require('path');
 const fs = require('fs');
+const os = require('os');
 const express = require('express');
 const cors = require('cors');
 
@@ -49,5 +50,14 @@ if (fs.existsSync(DIST)) {
 }
 
 app.listen(PORT, () => {
-  console.log(`\n  Pantry Audit server running at http://localhost:${PORT}\n`);
+  console.log(`\n  Pantry Audit server running:\n    Local:   http://localhost:${PORT}`);
+  // Print LAN URLs so tablets/phones on the same Wi-Fi know where to point.
+  for (const ifaces of Object.values(os.networkInterfaces())) {
+    for (const i of ifaces || []) {
+      if (i.family === 'IPv4' && !i.internal) {
+        console.log(`    Network: http://${i.address}:${PORT}`);
+      }
+    }
+  }
+  console.log('');
 });

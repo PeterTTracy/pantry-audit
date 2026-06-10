@@ -13,7 +13,7 @@
     "dev:server": "nodemon server/index.js",
     "dev:client": "vite",
     "dev": "concurrently -k -n server,client \"npm:dev:server\" \"npm:dev:client\"",
-    "test": "node --test test/"
+    "test": "node --test"
   },
   "dependencies": {
     "cors": "^2.8.5",

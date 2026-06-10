@@ -28,6 +28,7 @@ export default function AuditForm() {
   const [notes, setNotes] = useState('');
   const [photo, setPhoto] = useState(null);
   const [hadPrefill, setHadPrefill] = useState(false);
+  const [prefillApplied, setPrefillApplied] = useState(false);
 
   useEffect(() => {
     api.product(id)
@@ -35,6 +36,8 @@ export default function AuditForm() {
         setData(d);
         const { audit, prefill } = d;
         setHadPrefill(!!prefill);
+        // Only counts as "prefill used" when the form was actually populated from it.
+        setPrefillApplied(!audit && !!prefill);
 
         if (audit) {
           // Existing record wins.
@@ -65,12 +68,17 @@ export default function AuditForm() {
 
   const toggleFlag = (key) => setFlags((f) => ({ ...f, [key]: !f[key] }));
 
-  const submit = async (e) => {
-    e.preventDefault();
-    setErr(''); setSaving(true);
+  const save = async (status) => {
+    setErr('');
+    if (status === 'complete') {
+      if (!vendorType) return setErr('Select a vendor type before completing the audit.');
+      if (!ingredients.trim()) return setErr('Enter the ingredient statement before completing the audit.');
+    }
+    setSaving(true);
     try {
       const fd = new FormData();
       fd.set('unit_name', unit.unit_name);
+      fd.set('status', status);
       fd.set('vendor_type', vendorType);
       fd.set('ingredients', ingredients);
       fd.set('voluntary_disclaimers', disclaimers);
@@ -79,7 +87,7 @@ export default function AuditForm() {
       fd.set('ask_us_flag', askUs ? '1' : '0');
       fd.set('reviewed_by', reviewer || '');
       fd.set('notes', notes);
-      fd.set('gtin_prefill_used', hadPrefill ? '1' : '0');
+      fd.set('gtin_prefill_used', prefillApplied ? '1' : '0');
       if (photo) fd.set('label_photo', photo);
 
       await api.saveAudit(id, fd);
@@ -90,6 +98,11 @@ export default function AuditForm() {
     } finally {
       setSaving(false);
     }
+  };
+
+  const submit = (e) => {
+    e.preventDefault();
+    save('complete');
   };
 
   if (loading) return <p className="muted">Loading…</p>;
@@ -195,11 +208,15 @@ export default function AuditForm() {
       {err && <div className="alert alert-error">{err}</div>}
 
       <div className="form-actions">
-        <span className="muted small">Reviewing as <strong>{reviewer || '—'}</strong> · saving sets review due +90 days</span>
+        <span className="muted small">Reviewing as <strong>{reviewer || '—'}</strong> · completing sets review due +90 days</span>
         <div>
           <button type="button" className="btn btn-ghost" onClick={() => nav(-1)}>Cancel</button>
+          <button type="button" className="btn btn-ghost" disabled={saving || saved}
+            onClick={() => save('in_progress')}>
+            Save Progress
+          </button>
           <button type="submit" className="btn btn-primary" disabled={saving || saved}>
-            {saved ? '✓ Saved' : saving ? 'Saving…' : 'Save Audit'}
+            {saved ? '✓ Saved' : saving ? 'Saving…' : 'Complete Audit'}
           </button>
         </div>
       </div>
