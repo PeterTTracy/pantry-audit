@@ -75,6 +75,7 @@ export default function ImportScreen() {
               <li>{result.inserted} new products added</li>
               <li>{result.updated} existing products updated</li>
               <li>{result.out_of_scope} marked out of audit scope</li>
+              {result.duplicates > 0 && <li>{result.duplicates} duplicate SKU rows ignored</li>}
               {result.skipped > 0 && <li>{result.skipped} rows skipped (no item description)</li>}
             </ul>
             <p className="muted small">

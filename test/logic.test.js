@@ -83,6 +83,28 @@ test('parses real MyOrders format: "Grouped by:" header prefix and hierarchical 
   assert.strictEqual(byDesc['MILK WHOLE GAL'].gtin, '00044100117777');
 });
 
+test('deduplicates repeated SKUs: first wins, real room beats Unassigned', () => {
+  const rows = [
+    ['My Cafe (COMPASS-1)'],
+    ['Classification', 'Seq', 'Item Description', 'Dist #'],
+    // same SKU three times: Unassigned first, then a real room, then another room
+    ['Unassigned', '1', 'Olive Oil', 'SKU-1'],
+    ['Dry Storage', '2', 'Olive Oil', 'SKU-1'],
+    ['Walk-in Cooler', '3', 'Olive Oil', 'SKU-1'],
+    // same SKU twice, both real rooms: first wins
+    ['Freezer', '4', 'Chicken Breast', 'SKU-2'],
+    ['Walk-in Cooler', '5', 'Chicken Breast', 'SKU-2'],
+    // unique SKU untouched
+    ['Dry Storage', '6', 'Penne', 'SKU-3'],
+  ];
+  const { items, duplicates } = parseImportRows(rows);
+  assert.strictEqual(items.length, 3);
+  assert.strictEqual(duplicates, 3);
+  const byDesc = Object.fromEntries(items.map((i) => [i.item_description, i]));
+  assert.strictEqual(byDesc['Olive Oil'].storage_location, 'Dry Storage', 'real room replaces Unassigned, first real room wins');
+  assert.strictEqual(byDesc['Chicken Breast'].storage_location, 'Freezer', 'first occurrence wins');
+});
+
 test('restores GTIN leading zeros lost to number parsing', () => {
   assert.strictEqual(normalizeGtin(24100110056), '0024100110056'); // numeric cell
   assert.strictEqual(normalizeGtin('0024100110056'), '0024100110056'); // already text

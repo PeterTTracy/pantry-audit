@@ -79,8 +79,11 @@ export function parseImportRows(rows) {
     gtin: col('gtin'),
   };
 
-  const items = [];
+  // One row per unit+SKU: first occurrence wins, except a row with a real
+  // room assignment replaces an earlier 'Unassigned' one.
+  const byKey = new Map();
   let skipped = 0;
+  let duplicates = 0;
 
   for (let i = headerIdx + 1; i < rows.length; i++) {
     const row = rows[i] || [];
@@ -95,7 +98,7 @@ export function parseImportRows(rows) {
 
     const inScope = !isOutOfScope(classification);
 
-    items.push({
+    const item = {
       unit_name: unit.unit_name,
       compass_id: unit.compass_id,
       storage_location: classification || 'Unassigned',
@@ -106,8 +109,18 @@ export function parseImportRows(rows) {
       gtin: idx.gtin >= 0 ? normalizeGtin(row[idx.gtin]) : null,
       manufacturer: idx.mfg >= 0 ? norm(row[idx.mfg]) : '',
       audit_scope: inScope ? 1 : 0,
-    });
+    };
+
+    const prev = byKey.get(sku);
+    if (!prev) {
+      byKey.set(sku, item);
+    } else {
+      duplicates++;
+      if (prev.storage_location === 'Unassigned' && item.storage_location !== 'Unassigned') {
+        byKey.set(sku, item);
+      }
+    }
   }
 
-  return { unit, items, skipped };
+  return { unit, items: [...byKey.values()], skipped, duplicates };
 }
