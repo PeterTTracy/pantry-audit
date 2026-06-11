@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { Link } from 'react-router-dom';
 import { api } from '../api';
 
 export default function ImportScreen() {
@@ -41,6 +42,7 @@ export default function ImportScreen() {
     <div>
       <div className="page-head">
         <div>
+          <Link to="/locations" className="back">← Locations</Link>
           <h1>Import Inventory</h1>
           <p className="muted">Load a MyOrders inventory export (.csv or .xlsx)</p>
         </div>

@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, Link } from 'react-router-dom';
 import { api } from '../api';
 import { useSession } from '../session.jsx';
 
@@ -34,6 +34,7 @@ export default function LocationDashboard() {
     <div>
       <div className="page-head">
         <div>
+          <Link to="/" className="back">← Switch Unit</Link>
           <h1>Storage Locations</h1>
           <p className="muted">{unit?.unit_name}{unit?.compass_id ? ` · ${unit.compass_id}` : ''}</p>
         </div>

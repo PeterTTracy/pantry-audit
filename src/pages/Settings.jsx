@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
+import { Link } from 'react-router-dom';
 import { api } from '../api';
 import { useSession } from '../session.jsx';
 
@@ -70,6 +71,7 @@ export default function Settings() {
     <div>
       <div className="page-head">
         <div>
+          <Link to="/locations" className="back">← Locations</Link>
           <h1>Settings</h1>
           <p className="muted">Manage houses (dining units) on this device</p>
         </div>

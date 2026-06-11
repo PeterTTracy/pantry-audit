@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { Link } from 'react-router-dom';
 import { api } from '../api';
 
 export default function ComplianceDashboard() {
@@ -28,6 +29,7 @@ export default function ComplianceDashboard() {
     <div>
       <div className="page-head">
         <div>
+          <Link to="/locations" className="back">← Locations</Link>
           <h1>Compliance Dashboard</h1>
           <p className="muted">Audit progress across all dining units</p>
         </div>
