@@ -7,6 +7,7 @@ import { parseImportRows } from './importParse';
 import { computeCompliance } from './compliance';
 import { buildExportSheets } from './exportRows';
 import { fetchPrefill } from './off';
+import { sync } from './sync';
 
 const ASK_US_VENDOR_TYPES = new Set(['House-Made', 'Local Artisan', 'Imported - Non-English Label']);
 const ALLERGEN_KEYS = [
@@ -50,7 +51,7 @@ export async function addUnit(unitName, compassId) {
     if (existing) throw new Error(`"${name}" already exists.`);
     await reqp(t.objectStore('units').add({ unit_name: name, compass_id: compass }));
     return { unit_name: name, compass_id: compass };
-  });
+  }).then((r) => { sync.unit(name); return r; });
 }
 
 // Permanently deletes the unit and ALL of its products, audits, and photos.
@@ -64,7 +65,7 @@ export async function deleteUnit(unitName) {
       await reqp(t.objectStore('photos').delete(p.id));
     }
     return { deleted_products: prods.length };
-  });
+  }).then((r) => { sync.deleteUnit(unitName); return r; });
 }
 
 // Per-unit stats for the Settings screen.
@@ -216,7 +217,7 @@ export async function saveAudit(id, fields, photoFile) {
       await reqp(t.objectStore('photos').put({ product_id: pid, name: photoFile.name, blob: photoFile }));
     }
     return { ok: true, product_id: pid, status };
-  });
+  }).then((r) => { sync.audit(pid); return r; });
 }
 
 // ---- Remove / restore items from the audit list -------------------------------
@@ -229,7 +230,7 @@ export async function removeFromAudit(id) {
     if (!p) throw new Error('Product not found');
     await reqp(t.objectStore('products').put({ ...p, removed: 1 }));
     return { ok: true };
-  });
+  }).then((r) => { sync.product(pid); return r; });
 }
 
 export async function restoreProduct(id) {
@@ -239,7 +240,7 @@ export async function restoreProduct(id) {
     if (!p) throw new Error('Product not found');
     await reqp(t.objectStore('products').put({ ...p, removed: 0 }));
     return { ok: true };
-  });
+  }).then((r) => { sync.product(pid); return r; });
 }
 
 export async function restoreRemoved(unitName) {
@@ -253,7 +254,7 @@ export async function restoreRemoved(unitName) {
       }
     }
     return { restored };
-  });
+  }).then((r) => { sync.unitProducts(unitName); return r; });
 }
 
 // ---- Import a MyOrders export ----------------------------------------------
@@ -295,8 +296,14 @@ export async function importFile(file) {
     }
   });
 
+  // Push the imported unit + products to the cloud (background, best-effort).
+  sync.unitProducts(unit.unit_name);
+
   // Open Food Facts prefill in the background; don't block the result.
-  runPrefillForUnit(unit.unit_name).catch(() => {});
+  // Re-push once it settles so the fetched prefill reaches the cloud too.
+  runPrefillForUnit(unit.unit_name)
+    .then((n) => { if (n) sync.unitProducts(unit.unit_name); })
+    .catch(() => {});
 
   return {
     ok: true,
@@ -310,6 +317,7 @@ async function runPrefillForUnit(unitName) {
   const products = await unitProducts(unitName);
   const pending = products.filter((p) =>
     p.audit_status === 'pending' && p.gtin && !p.gtin_prefill);
+  let updated = 0;
   for (const p of pending) {
     const prefill = await fetchPrefill(p.gtin);
     if (prefill) {
@@ -317,10 +325,12 @@ async function runPrefillForUnit(unitName) {
         const fresh = await reqp(t.objectStore('products').get(p.id));
         if (fresh && !fresh.gtin_prefill) {
           await reqp(t.objectStore('products').put({ ...fresh, gtin_prefill: prefill }));
+          updated++;
         }
       });
     }
   }
+  return updated;
 }
 
 // ---- Compliance summary -----------------------------------------------------

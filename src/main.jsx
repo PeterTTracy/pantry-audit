@@ -3,6 +3,7 @@ import ReactDOM from 'react-dom/client';
 import { HashRouter } from 'react-router-dom';
 import App from './App.jsx';
 import { seedIfEmpty } from './lib/seed';
+import { initSync } from './lib/sync';
 import './styles.css';
 
 // Ask the browser not to evict our IndexedDB data under storage pressure.
@@ -19,4 +20,6 @@ seedIfEmpty()
         </HashRouter>
       </React.StrictMode>
     );
+    // Kick off background sync after render — never blocks the UI.
+    initSync().catch((e) => console.warn('[sync]', e?.message));
   });
