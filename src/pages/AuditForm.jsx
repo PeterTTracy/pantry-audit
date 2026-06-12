@@ -3,6 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { api } from '../api';
 import { useSession } from '../session.jsx';
 import { ALLERGENS, VENDOR_TYPES, ASK_US_VENDOR_TYPES, tagsToFlags, tagsToText } from '../allergens';
+import PhotoGallery from '../components/PhotoGallery.jsx';
 
 const emptyFlags = () => Object.fromEntries(ALLERGENS.map((a) => [a.key, false]));
 
@@ -26,7 +27,6 @@ export default function AuditForm() {
   const [askUs, setAskUs] = useState(false);
   const [askUsTouched, setAskUsTouched] = useState(false);
   const [notes, setNotes] = useState('');
-  const [photo, setPhoto] = useState(null);
   const [hadPrefill, setHadPrefill] = useState(false);
   const [prefillApplied, setPrefillApplied] = useState(false);
 
@@ -88,7 +88,7 @@ export default function AuditForm() {
         notes,
         gtin_prefill_used: prefillApplied ? 1 : 0,
       };
-      await api.saveAudit(id, fields, photo);
+      await api.saveAudit(id, fields);
       setSaved(true);
       setTimeout(() => nav(-1), 700);
     } catch (e2) {
@@ -107,7 +107,6 @@ export default function AuditForm() {
   if (err && !data) return <div className="alert alert-error">{err}</div>;
 
   const p = data.product;
-  const existingPhoto = data.photoUrl;
 
   return (
     <form onSubmit={submit} className="audit-form">
@@ -118,6 +117,9 @@ export default function AuditForm() {
         </div>
         <span className={`status status-${p.audit_status}`}>{p.audit_status.replace('_', ' ')}</span>
       </div>
+
+      {/* Swipeable photo library — capture labels / ingredient / nutrition shots */}
+      <PhotoGallery productId={p.id} />
 
       {/* Read-only header */}
       <div className="card readonly-head">
@@ -196,18 +198,6 @@ export default function AuditForm() {
             <small className="muted"> — auto-set for House-Made, Local Artisan, and Imported (Non-English Label). Override as needed.</small>
           </span>
         </label>
-      </div>
-
-      <div className="card form-section">
-        <h3>Label Photo</h3>
-        {existingPhoto && (
-          <div className="photo-existing">
-            <img src={existingPhoto} alt="Current label" />
-            <span className="muted small">Current photo. Uploading a new one replaces it.</span>
-          </div>
-        )}
-        <input type="file" accept="image/jpeg,image/png" onChange={(e) => setPhoto(e.target.files[0] || null)} />
-        {photo && <p className="muted small">Selected: {photo.name}</p>}
       </div>
 
       <div className="card form-section">

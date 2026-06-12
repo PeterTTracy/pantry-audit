@@ -7,7 +7,7 @@ import { parseImportRows } from './importParse';
 import { computeCompliance } from './compliance';
 import { buildExportSheets } from './exportRows';
 import { fetchPrefill } from './off';
-import { sync } from './sync';
+import { sync, fetchPhotoBlob } from './sync';
 
 const ASK_US_VENDOR_TYPES = new Set(['House-Made', 'Local Artisan', 'Imported - Non-English Label']);
 const ALLERGEN_KEYS = [
@@ -146,10 +146,10 @@ export async function listProducts({ unit, location, search, allergen }) {
 // ---- Single product + audit + prefill + photo ------------------------------
 export async function getProduct(id) {
   const pid = Number(id);
-  const [product, audit, photo] = await tx(['products', 'audits', 'photos'], 'readonly', async (t) => [
+  const [product, audit, photos] = await tx(['products', 'audits', 'photos'], 'readonly', async (t) => [
     await reqp(t.objectStore('products').get(pid)),
     await reqp(t.objectStore('audits').get(pid)),
-    await reqp(t.objectStore('photos').get(pid)),
+    await reqp(t.objectStore('photos').index('product_id').getAll(IDBKeyRange.only(pid))),
   ]);
   if (!product) throw new Error('Product not found');
 
@@ -168,13 +168,72 @@ export async function getProduct(id) {
     product: productOut,
     audit: audit || null,
     prefill,
-    photoUrl: photo ? URL.createObjectURL(photo.blob) : null,
-    photoName: photo ? photo.name : null,
+    // Metadata only — the gallery lazily resolves each blob via getPhotoUrl.
+    photos: sortPhotos(photos).map((p) => ({ id: p.id, name: p.name, source: p.source, sort: p.sort })),
   };
 }
 
+// ---- Photos (many per product) ---------------------------------------------
+const sortPhotos = (rows) => rows.sort((a, b) => (a.sort ?? 0) - (b.sort ?? 0) || a.id - b.id);
+
+export async function listPhotos(productId) {
+  const pid = Number(productId);
+  const rows = await tx(['photos'], 'readonly', (t) =>
+    reqp(t.objectStore('photos').index('product_id').getAll(IDBKeyRange.only(pid))));
+  return sortPhotos(rows).map((p) => ({ id: p.id, name: p.name, source: p.source, sort: p.sort }));
+}
+
+// Append one or more image files to a product's library (persists immediately
+// so a captured photo survives navigation, then syncs in the background).
+export async function addPhotos(productId, files, source = 'upload') {
+  const pid = Number(productId);
+  const list = [...files].filter(Boolean);
+  if (!list.length) return { added: 0 };
+  const existing = await tx(['photos'], 'readonly', (t) =>
+    reqp(t.objectStore('photos').index('product_id').getAll(IDBKeyRange.only(pid))));
+  let nextSort = existing.length ? Math.max(...existing.map((p) => p.sort ?? 0)) + 1 : 0;
+  const ids = await tx(['photos'], 'readwrite', async (t) => {
+    const store = t.objectStore('photos');
+    const out = [];
+    for (const f of list) {
+      out.push(await reqp(store.add({
+        product_id: pid, name: f.name || null, blob: f, source, sort: nextSort++, storage_path: null,
+      })));
+    }
+    return out;
+  });
+  ids.forEach((id) => sync.photo(id));
+  return { added: ids.length, ids };
+}
+
+export async function deletePhoto(photoId) {
+  const id = Number(photoId);
+  const photo = await tx(['photos'], 'readonly', (t) => reqp(t.objectStore('photos').get(id)));
+  if (!photo) return { ok: true };
+  await tx(['photos'], 'readwrite', (t) => reqp(t.objectStore('photos').delete(id)));
+  sync.deletePhoto(photo); // pass the row so the cloud knows its storage_path
+  return { ok: true };
+}
+
+// Resolve an object URL for a photo, lazily downloading + caching the blob from
+// cloud Storage the first time (metadata-only rows arrive from a fresh pull).
+export async function getPhotoUrl(photoId) {
+  const id = Number(photoId);
+  let photo = await tx(['photos'], 'readonly', (t) => reqp(t.objectStore('photos').get(id)));
+  if (!photo) return null;
+  if (!photo.blob && photo.storage_path) {
+    const blob = await fetchPhotoBlob(photo.storage_path);
+    if (blob) {
+      photo = { ...photo, blob };
+      await tx(['photos'], 'readwrite', (t) => reqp(t.objectStore('photos').put(photo)));
+    }
+  }
+  return photo.blob ? URL.createObjectURL(photo.blob) : null;
+}
+
 // ---- Save audit record (draft or complete) ----------------------------------
-export async function saveAudit(id, fields, photoFile) {
+// Photos are managed independently (addPhotos/deletePhoto), not through here.
+export async function saveAudit(id, fields) {
   const pid = Number(id);
   const status = fields.status === 'in_progress' ? 'in_progress' : 'complete';
   if (status === 'complete') {
@@ -184,7 +243,7 @@ export async function saveAudit(id, fields, photoFile) {
     }
   }
 
-  return tx(['products', 'audits', 'photos'], 'readwrite', async (t) => {
+  return tx(['products', 'audits'], 'readwrite', async (t) => {
     const product = await reqp(t.objectStore('products').get(pid));
     if (!product) throw new Error('Product not found');
     const existing = await reqp(t.objectStore('audits').get(pid));
@@ -213,9 +272,6 @@ export async function saveAudit(id, fields, photoFile) {
 
     await reqp(t.objectStore('audits').put(record));
     await reqp(t.objectStore('products').put({ ...product, audit_status: status }));
-    if (photoFile) {
-      await reqp(t.objectStore('photos').put({ product_id: pid, name: photoFile.name, blob: photoFile }));
-    }
     return { ok: true, product_id: pid, status };
   }).then((r) => { sync.audit(pid); return r; });
 }

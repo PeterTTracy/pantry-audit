@@ -3,9 +3,11 @@
 //              before its first import
 //   products — inventory items (keyPath id, autoIncrement)
 //   audits   — one audit record per product (keyPath product_id)
-//   photos   — label photo blobs (keyPath product_id)
+//   photos   — label/ingredient photos. v3+: many per product, keyed by an
+//              autoincrement id with a product_id index (was one-per-product,
+//              keyed product_id, in v1–v2). blob is null until lazily fetched.
 const DB_NAME = 'pantry_audit';
-const DB_VERSION = 2;
+const DB_VERSION = 3;
 
 let dbPromise = null;
 
@@ -52,6 +54,18 @@ export function openDB() {
               }
             };
           }
+        }
+        if (e.oldVersion < 3) {
+          // photos goes from one-per-product (keyPath product_id) to many
+          // (keyPath autoincrement id + product_id index). Changing a store's
+          // keyPath means recreating it, and createObjectStore/deleteObjectStore
+          // must run synchronously here (not in an async cursor callback, or the
+          // swap silently no-ops). Any pre-v3 single photos are local-only — the
+          // cloud has none — so they re-sync/re-capture rather than risk a
+          // half-applied migration.
+          if (db.objectStoreNames.contains('photos')) db.deleteObjectStore('photos');
+          const photos = db.createObjectStore('photos', { keyPath: 'id', autoIncrement: true });
+          photos.createIndex('product_id', 'product_id');
         }
       };
       req.onsuccess = () => {

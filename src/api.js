@@ -4,6 +4,7 @@ import {
   listUnits, listLocations, listProducts, getProduct, saveAudit,
   importFile, compliance, exportXlsx, downloadBackup, restoreBackup,
   addUnit, deleteUnit, unitStats, removeFromAudit, restoreProduct, restoreRemoved,
+  listPhotos, addPhotos, deletePhoto, getPhotoUrl,
 } from './lib/data';
 
 export const api = {
@@ -17,7 +18,11 @@ export const api = {
   locations: (unit) => listLocations(unit),
   products: (filters) => listProducts(filters),
   product: (id) => getProduct(id),
-  saveAudit: (id, fields, photoFile) => saveAudit(id, fields, photoFile),
+  saveAudit: (id, fields) => saveAudit(id, fields),
+  listPhotos: (productId) => listPhotos(productId),
+  addPhotos: (productId, files, source) => addPhotos(productId, files, source),
+  deletePhoto: (photoId) => deletePhoto(photoId),
+  photoUrl: (photoId) => getPhotoUrl(photoId),
   importFile: (file) => importFile(file),
   compliance: () => compliance(),
   exportXlsx: () => exportXlsx(),
