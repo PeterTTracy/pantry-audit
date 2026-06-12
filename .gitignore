@@ -4,3 +4,6 @@ data/
 uploads/
 *.log
 .DS_Store
+
+# Local cloud backups from the migration script (not source)
+scripts/backups/
