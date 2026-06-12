@@ -14,10 +14,16 @@ export default function UnitSelect() {
 
   useEffect(() => {
     setName(reviewer || '');
-    api.units()
-      .then((u) => { setUnits(u); if (u.length === 1) setUnitName(u[0].unit_name); })
+    const load = () => api.units()
+      .then((u) => { setUnits(u); if (u.length === 1) setUnitName((prev) => prev || u[0].unit_name); })
       .catch((e) => setErr(e.message))
       .finally(() => setLoading(false));
+    load();
+    // A fresh device renders before the background cloud pull finishes; re-fetch
+    // when the pull lands so the unit list fills in without a manual reload.
+    const onSync = () => load();
+    window.addEventListener('pa-sync-updated', onSync);
+    return () => window.removeEventListener('pa-sync-updated', onSync);
   }, []); // eslint-disable-line
 
   const submit = (e) => {
