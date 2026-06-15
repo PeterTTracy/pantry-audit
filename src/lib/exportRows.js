@@ -3,6 +3,16 @@
 
 const yn = (v) => (v ? 'Yes' : 'No');
 
+// Same ordering the gallery uses: by sort, then id as a stable tiebreaker.
+const sortPhotos = (rows) => [...rows].sort((a, b) => (a.sort ?? 0) - (b.sort ?? 0) || (a.id ?? 0) - (b.id ?? 0));
+
+// One human-readable label per photo. Captured shots (camera/workbook) often
+// have no filename, so fall back to a numbered source label.
+const photoLabel = (ph, i) => {
+  const name = ph.name == null ? '' : String(ph.name).trim();
+  return name || `${ph.source || 'photo'} ${i + 1}`;
+};
+
 // Excel sheet names: max 31 chars, no : \ / ? * [ ]
 export function sheetName(name, used) {
   let base = String(name || 'Unit').replace(/[:\\/?*[\]]/g, ' ').slice(0, 28).trim() || 'Unit';
@@ -12,7 +22,9 @@ export function sheetName(name, used) {
   return candidate;
 }
 
-export function buildExportSheets(products, audits, photoNameByProduct = new Map()) {
+// photosByProduct: Map<product_id, Array<{ id, name, source, sort }>> — every
+// photo for the product, so the export lists them all (not just one).
+export function buildExportSheets(products, audits, photosByProduct = new Map()) {
   const auditByProduct = new Map(audits.map((a) => [a.product_id, a]));
   const units = [...new Set(products.map((p) => p.unit_name))].sort((a, b) => a.localeCompare(b));
   const used = new Set();
@@ -25,6 +37,7 @@ export function buildExportSheets(products, audits, photoNameByProduct = new Map
         String(x.item_description).localeCompare(String(y.item_description)))
       .map((p) => {
         const a = auditByProduct.get(p.id) || {};
+        const photos = sortPhotos(photosByProduct.get(p.id) || []);
         return {
           'Unit': p.unit_name,
           'Storage Location': p.storage_location,
@@ -48,7 +61,8 @@ export function buildExportSheets(products, audits, photoNameByProduct = new Map
           'Gluten': yn(a.allergen_gluten),
           'Other Allergens': a.allergen_other || '',
           'Ask Us Flag': yn(a.ask_us_flag),
-          'Label Photo Filename': photoNameByProduct.get(p.id) || '',
+          'Photo Count': photos.length,
+          'Label Photos': photos.map(photoLabel).join('; '),
           'Reviewed By': a.reviewed_by || '',
           'Date Reviewed': a.date_reviewed || '',
           'Review Due': a.review_due || '',

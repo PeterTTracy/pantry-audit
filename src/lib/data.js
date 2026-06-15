@@ -405,10 +405,16 @@ export async function exportXlsx() {
     await reqp(t.objectStore('audits').getAll()),
     await reqp(t.objectStore('photos').getAll()),
   ]);
-  const photoNames = new Map(photos.map((p) => [p.product_id, p.name]));
+  // Group every photo under its product so the export lists all of them.
+  const photosByProduct = new Map();
+  for (const ph of photos) {
+    const arr = photosByProduct.get(ph.product_id) || [];
+    arr.push({ id: ph.id, name: ph.name, source: ph.source, sort: ph.sort });
+    photosByProduct.set(ph.product_id, arr);
+  }
 
   const wb = XLSX.utils.book_new();
-  for (const { sheet, rows } of buildExportSheets(products.filter((p) => !p.removed), audits, photoNames)) {
+  for (const { sheet, rows } of buildExportSheets(products.filter((p) => !p.removed), audits, photosByProduct)) {
     const ws = rows.length
       ? XLSX.utils.json_to_sheet(rows)
       : XLSX.utils.aoa_to_sheet([['No audit-scope items for this unit.']]);

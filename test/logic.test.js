@@ -155,14 +155,29 @@ test('compliance flags overdue and ask-us items', () => {
 // ---- export rows -------------------------------------------------------------
 
 test('export builds one sheet per unit, scope items only', () => {
-  const sheets = buildExportSheets(PRODUCTS, AUDITS, new Map([[1, 'label.jpg']]));
+  const photosByProduct = new Map([
+    [1, [{ id: 10, name: 'label.jpg', source: 'upload', sort: 0 }]],
+    // Cheese (product 4): out of sort order, and a captured shot with no filename.
+    [4, [
+      { id: 21, name: null, source: 'workbook', sort: 1 },
+      { id: 20, name: 'front.jpg', source: 'camera', sort: 0 },
+    ]],
+  ]);
+  const sheets = buildExportSheets(PRODUCTS, AUDITS, photosByProduct);
   assert.deepStrictEqual(sheets.map((s) => s.sheet), ['Cafe A', 'Cafe B']);
   assert.strictEqual(sheets[0].rows.length, 2); // napkins (out of scope) excluded
   const crackers = sheets[0].rows.find((r) => r['Item Description'] === 'Crackers');
-  assert.strictEqual(crackers['Label Photo Filename'], 'label.jpg');
+  assert.strictEqual(crackers['Photo Count'], 1);
+  assert.strictEqual(crackers['Label Photos'], 'label.jpg');
   assert.strictEqual(crackers['Vendor Type'], 'FDA Packaged');
   const pasta = sheets[0].rows.find((r) => r['Item Description'] === 'Pasta');
   assert.strictEqual(pasta['Milk'], 'No'); // unaudited rows still export with No flags
+  assert.strictEqual(pasta['Photo Count'], 0);
+  assert.strictEqual(pasta['Label Photos'], ''); // no photos -> empty cell
+  // All photos are listed, ordered by sort; a nameless capture falls back to a numbered source label.
+  const cheese = sheets[1].rows.find((r) => r['Item Description'] === 'Cheese');
+  assert.strictEqual(cheese['Photo Count'], 2);
+  assert.strictEqual(cheese['Label Photos'], 'front.jpg; workbook 2');
 });
 
 test('sheet names are deduplicated and sanitized', () => {
